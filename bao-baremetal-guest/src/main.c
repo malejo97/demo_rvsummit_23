@@ -26,7 +26,8 @@
 #include <timer.h>
 #include <idma.h>
 
-#define TIMER_INTERVAL (TIME_S(1))
+#define TIMER_INTERVAL  (TIME_S(1))
+#define HEART_BEAT_CNT  (25)
 
 // IOMMU registers
 #define IOMMU_BASE_ADDR         (0x50010000ULL)
@@ -46,7 +47,7 @@
 #define DMA_SRC_ATTACK          (0x81000000ULL)
 #define DMA_OPENSBI_BASE_ATTACK (0x80002700ULL)     // 80038000
 #define DMA_BAO_BASE_ATTACK     (0x80200000ULL)
-#define DMA_ATTACK_LOOPS        (400)
+#define DMA_ATTACK_LOOPS        (100)
 
 #define TEST_TRAP 0
 #define TEST_PMP_SRC 0
@@ -96,7 +97,8 @@
 
                                                                                            
 
-spinlock_t print_lock            = SPINLOCK_INITVAL;
+spinlock_t print_lock   = SPINLOCK_INITVAL;
+uint8_t cnt             = HEART_BEAT_CNT;
 
 /*
 * DMA configuration registers
@@ -108,6 +110,7 @@ volatile uint64_t *dma_num_bytes = (volatile uint64_t *) DMA_NUMBYTES_ADDR(0);
 volatile uint64_t *dma_conf      = (volatile uint64_t *) DMA_CONF_ADDR(0);
 volatile uint64_t *dma_nextid    = (volatile uint64_t *) DMA_NEXTID_ADDR(0);
 volatile uint64_t *dma_done      = (volatile uint64_t *) DMA_DONE_ADDR(0);
+volatile uint64_t *dma_intf      = (volatile uint64_t *) DMA_INTF_ADDR(0);
 
 static inline void fence_i() {
     asm volatile("fence.i" ::: "memory");
@@ -124,7 +127,12 @@ void ipi_handler(){
 }
 
 void timer_handler(){
-    //printf("cpu%d: %s\n", get_cpuid(), __func__);
+
+    if (!(--cnt))
+    {
+        printf("I'm alive!\n");
+        cnt = HEART_BEAT_CNT;
+    }
     timer_set(TIMER_INTERVAL);
     irq_send_ipi(1ull << (get_cpuid() + 1));
 }
@@ -145,6 +153,8 @@ void main(void){
     // OpenSBI as default target
     uint64_t dst = (uint64_t) DMA_OPENSBI_BASE_ATTACK;
     uint64_t src = (uint64_t) DMA_SRC_ATTACK;
+
+    uint64_t intf = 0;
 
     if(cpu_is_master()){
         spin_lock(&print_lock);
@@ -191,57 +201,33 @@ void main(void){
         char attack = 255;
         char attack_mode = 255;
 
-        // attack selection
+        /*** Attack selection ***/
+        printf("\r\nSelect attack: \n");
+        printf("\tL - Firmware attack. \n");
+        printf("\tR - Hypervisor attack. \n");
+        printf("Enter: \r\n");
+
         do 
         {
-            printf("\r\nSelect attack: \n");
-            printf("\t1 - Firmware attack. \n");
-            printf("\t2 - Hypervisor attack. \n");
-            printf("Enter: \r\n");
-
-            while(attack == 255) attack = uart_getchar();
-            if (!(attack == '1' || attack == '2'))
-            {
-                printf("\r\n Invalid choice !! \r\n");
-                attack = 255;
-            }
+            // poll intf.btnl and intf.btnr bits
+            intf = *dma_intf & ((1ULL << DMA_FRONTEND_INTF_BTNL_BIT) | 
+                                (1ULL << DMA_FRONTEND_INTF_BTNR_BIT));
         } 
-        while(attack != '1' && attack != '2');
+        while(!intf);
 
-        // ack choice
-        printf("\r\nAttack chosen: %c \r\n", attack);
-
-        // select protection
+        // try to clear register until releasing all buttons
         do
         {
-            printf("\r\nSelect protection: \r\n");
-            printf("\t1 - without IOMMU.\r\n");
-            printf("\t2 - with IOMMU.\r\n");
-            printf("Enter: \r\n");
-
-            while(attack_mode == 255) attack_mode = uart_getchar();
-            if (!(attack_mode == '1' || attack_mode == '2'))
-            {
-                printf("\r\n Invalid choice !! \r\n");
-                attack_mode = 255;
-            }
-        }
-        while(attack_mode != '1' && attack_mode != '2');
-
-        // ack selected protection
-        if (attack_mode == '1')
-        {
-            set_iommu_mode(IOMMU_DDTP_MODE_BARE);
-            printf("\r\nIOMMU disabled\n");
-        }
-        else
-        {
-            set_iommu_mode(IOMMU_DDTP_MODE_1LVL);
-            printf("\r\nIOMMU enabled\n");
-        }
+            *dma_intf = ((1ULL << DMA_FRONTEND_INTF_BTNL_BIT) | 
+                         (1ULL << DMA_FRONTEND_INTF_BTNR_BIT) |
+                         (1ULL << DMA_FRONTEND_INTF_BTNU_BIT) | 
+                         (1ULL << DMA_FRONTEND_INTF_BTND_BIT) |
+                         (1ULL << DMA_FRONTEND_INTF_BTNC_BIT) );
+        } while (*dma_intf != 0);
+        
 
         // setup destination address according to the target
-        if(attack == '2')
+        if(intf & (1ULL << DMA_FRONTEND_INTF_BTNR_BIT))
         {
             printf("\r\nAttacking Bao \r\n");
             dst = (uint64_t) DMA_BAO_BASE_ATTACK;
@@ -252,9 +238,43 @@ void main(void){
             dst = (uint64_t) DMA_OPENSBI_BASE_ATTACK;
         }
 
-        fence_i();
+        /*** Select protection ***/
+        printf("\r\nSelect protection: \r\n");
+        printf("\tU - with IOMMU.\r\n");
+        printf("\tD - without IOMMU.\r\n");
+        printf("Enter: \r\n");
 
-        // setup DMA transfer
+        do
+        {
+            // poll intf.btnu and intf.btnd register
+            intf = *dma_intf & ((1ULL << DMA_FRONTEND_INTF_BTNU_BIT) | 
+                                (1ULL << DMA_FRONTEND_INTF_BTND_BIT));
+        }
+        while(!intf);
+
+        // try to clear register until releasing all buttons
+        do
+        {
+            *dma_intf = ((1ULL << DMA_FRONTEND_INTF_BTNL_BIT) | 
+                         (1ULL << DMA_FRONTEND_INTF_BTNR_BIT) |
+                         (1ULL << DMA_FRONTEND_INTF_BTNU_BIT) | 
+                         (1ULL << DMA_FRONTEND_INTF_BTND_BIT) |
+                         (1ULL << DMA_FRONTEND_INTF_BTNC_BIT) );
+        } while (*dma_intf != 0);
+
+        // ack selected protection
+        if(intf & (1ULL << DMA_FRONTEND_INTF_BTND_BIT))
+        {
+            set_iommu_mode(IOMMU_DDTP_MODE_BARE);
+            printf("\r\nIOMMU disabled\n");
+        }
+        else
+        {
+            set_iommu_mode(IOMMU_DDTP_MODE_1LVL);
+            printf("\r\nIOMMU enabled\n");
+        }
+
+        /*** Setup DMA transfer ***/
         *dma_src = (uint64_t) src;
         *dma_num_bytes = DMA_TRANSFER_SIZE;
         *dma_conf = (DMA_CONF_DECOUPLE  << DMA_FRONTEND_CONF_DECOUPLE_BIT   ) |
@@ -264,6 +284,8 @@ void main(void){
         for (int i = 0; i < DMA_ATTACK_LOOPS; i++)
         // for ( ; ; )
         {
+            fence_i();
+            
             *dma_dst = (uint64_t) dst;       
             printf("%x\n", *dma_dst);
 

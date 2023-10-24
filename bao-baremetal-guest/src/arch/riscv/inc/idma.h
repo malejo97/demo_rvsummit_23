@@ -57,9 +57,15 @@ extern "C" {
 #define DMA_FRONTEND_DONE_REG_OFFSET        0x30
 #define DMA_FRONTEND_DONE_REG_RESVAL        0x0
 
-// Wired interrupts to signal R/W completion
-#define DMA_FRONTEND_IPSR_REG_OFFSET        0x38
-#define DMA_FRONTEND_IPSR_REG_RESVAL        0x0
+// Software-hardware interface register
+#define DMA_FRONTEND_INTF_REG_OFFSET        0x38
+#define DMA_FRONTEND_INTF_REG_RESVAL        0x0
+
+#define DMA_FRONTEND_INTF_BTNU_BIT          0
+#define DMA_FRONTEND_INTF_BTND_BIT          1
+#define DMA_FRONTEND_INTF_BTNL_BIT          2
+#define DMA_FRONTEND_INTF_BTNR_BIT          3
+#define DMA_FRONTEND_INTF_BTNC_BIT          4
 
 // iDMA base physical address
 #define DMA_SRC_ADDR(idx)      (DMA_BASE(idx) + DMA_FRONTEND_SRC_ADDR_REG_OFFSET)
@@ -69,7 +75,7 @@ extern "C" {
 #define DMA_STATUS_ADDR(idx)   (DMA_BASE(idx) + DMA_FRONTEND_STATUS_REG_OFFSET)
 #define DMA_NEXTID_ADDR(idx)   (DMA_BASE(idx) + DMA_FRONTEND_NEXT_ID_REG_OFFSET)
 #define DMA_DONE_ADDR(idx)     (DMA_BASE(idx) + DMA_FRONTEND_DONE_REG_OFFSET)
-#define DMA_IPSR_ADDR(idx)     (DMA_BASE(idx) + DMA_FRONTEND_IPSR_REG_OFFSET)
+#define DMA_INTF_ADDR(idx)     (DMA_BASE(idx) + DMA_FRONTEND_INTF_REG_OFFSET)
 
 #ifdef __cplusplus
 }  // extern "C"
