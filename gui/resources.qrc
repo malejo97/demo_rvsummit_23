@@ -1,0 +1,32 @@
+<RCC>
+  <qresource prefix="images">
+    <file>images/sw_dead.png</file>
+    <file>images/sw_on.png</file>
+    <file>images/sw_off.png</file>
+    <file>images/heart_gray.png</file>
+    <file>images/riscv_logo.png</file>
+    <file>images/ssrc_logo.png</file>
+    <file>images/atrc_logo.png</file>
+    <file>images/square.png</file>
+    <file>images/opensbi_target.png</file>
+    <file>images/bao_target.png</file>
+    <file>images/zd_logo.png</file>
+    <file>images/btnu_en.png</file>
+    <file>images/btnu_dis.png</file>
+    <file>images/btnr_en.png</file>
+    <file>images/btnr_dis.png</file>
+    <file>images/btnl_en.png</file>
+    <file>images/btnl_dis.png</file>
+    <file>images/btnd_en.png</file>
+    <file>images/btnd_dis.png</file>
+    <file>images/btnc_en.png</file>
+    <file>images/btnc_dis.png</file>
+    <file>images/heart_white.png</file>
+    <file>images/heart_red.png</file>
+    <file>images/im_ok.png</file>
+    <file>images/dead.png</file>
+    <file>images/zd_logo.png</file>
+    <file>images/uminho_logo.png</file>
+    <file>images/tii_logo.png</file>
+  </qresource>
+</RCC>
