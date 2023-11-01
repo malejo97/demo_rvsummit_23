@@ -58,3 +58,7 @@ build/
 # misc
 *.drawio
 *.bkp
+__pycache__/
+images/
+*.ui
+*.qrc
