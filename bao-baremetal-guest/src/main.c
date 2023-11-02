@@ -257,7 +257,7 @@ void state_before_attack(void)
             if (sw_status & (1ULL << sw_idx))
             {
                 lock = 1;
-                printf("$GOTO$_5%.3d\n",sw_idx);
+                printf("$GOTO$_6%.3d\n$GOTO$_5%.3d\n",sw_status, sw_idx);
                 lock = 0;
                 set_iommu_mode(IOMMU_DDTP_MODE_BARE);
             }

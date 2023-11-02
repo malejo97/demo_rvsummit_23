@@ -62,3 +62,4 @@ __pycache__/
 images/
 *.ui
 *.qrc
+run_demo.sh
