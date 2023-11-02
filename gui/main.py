@@ -84,8 +84,6 @@ class PrintLines(LineReader):
 
         else:
             self.rxSignal.emit(repr(line))
-        
-        sys.stdout.write('RX: {}\n'.format(repr(line)))
 
     # Called when connection is lost
     def connection_lost(self, exc):
@@ -228,13 +226,18 @@ class DemoWindow(QMainWindow):
         
 
 if __name__ == "__main__":
+
+    if len(sys.argv) != 2:
+        sys.stderr.write('Wrong number of arguments!\nPlease, provide the path to the serial port connected to the FPGA board (e.g., /dev/ttyUSB0)')
+        exit()
+
     app = QApplication(sys.argv)
     win = DemoWindow()
 
     win.setStyleSheet(ScrollBarStyleSheet)
 
     # Initiate serial port
-    serial_port = Serial('/dev/ttyUSB0', baudrate=115200)
+    serial_port = Serial(sys.argv[1], baudrate=115200)
 
     # Setup RX signal
     PrintLines.rxSignal = win.SignalEmmiter.rxSignal
@@ -252,7 +255,7 @@ if __name__ == "__main__":
     # Start reader
     reader.start()
 
-    win.show()
+    win.showFullScreen()
 
     # reader.stop()
     sys.exit(app.exec())
