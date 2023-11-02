@@ -2,10 +2,10 @@ import sys
 import traceback
 
 from serial import Serial
-from serial.threaded import ReaderThread, Protocol, LineReader
+from serial.threaded import ReaderThread, LineReader
 
 from PyQt5.QtCore import (
-    Qt, pyqtSignal, QObject, QTimer
+    pyqtSignal, QObject, QTimer
 )
 
 from PyQt5.QtGui import (
@@ -13,7 +13,7 @@ from PyQt5.QtGui import (
 )
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QFrame
+    QApplication, QMainWindow
 )
 
 from demo_ui import Ui_MainWindow
