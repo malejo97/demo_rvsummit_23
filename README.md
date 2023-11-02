@@ -13,15 +13,9 @@ RISC-V IOMMU Demo for the RISC-V Summit 2023
 ## Table of Contents
 
 - [License](#license)
-- [About this Project](#about-this-project)
-- [Repository Structure](#repository-structure)
-- [IOMMU Features](#iommu-features)
-- [Module Parameters](#module-parameters)
-- [IP Interfaces](#ip-interfaces)
-- [IP Usage](#ip-usage)
-- [Validation](#validation)
-- [Tools and versions](#tools-and-versions)
-- [Roadmap and Contributions](#roadmap-and-contributions)
+- [About this Repository](#about-this-repository)
+- [GUI Dependencies](#gui-dependencies)
+- [Usage](#usage)
 
 ***
 
@@ -35,7 +29,7 @@ This work is licensed under the Apache-2.0 License. See the [LICENSE](./LICENSE)
 
 RISC-V IOMMU Demo for the RISC-V Summit 2023, presented in the [Technology Innovation Institute (TII)](https://www.tii.ae/) booth.
 
-It consists of a game similar to the russian roulette, in which a DMA device is programmed to write zeros into critical memory regions of a single-core CVA6-based platform executing Bao hypervisor and one baremetal guest atop of it. The demo is carried out in a Genesys2 FPGA board and the user navigates through the demo using the five push buttons in the board.
+It consists of a game similar to the russian roulette, in which a DMA device is programmed to write zeros into critical memory regions of a single-core CVA6-based platform executing Bao hypervisor and one baremetal guest atop of it. The demo is carried out in a Genesys2 FPGA board. The user navigates through the demo using the five push buttons in the board.
 
 An Input/Output Memory Management Unit (IOMMU) is integrated into the platform. It is enabled by default, but can be disabled using one of the eight switches in the board. However, the lethal switch is selected randomly on every attack. The user can iterate eight times trying switches individually to find the lethal one, or enable multiple switches in a single attack.
 
