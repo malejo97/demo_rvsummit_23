@@ -55,6 +55,9 @@ dkms.conf
 # build directories
 build/
 
+# output directories
+output/
+
 # misc
 *.drawio
 *.bkp
