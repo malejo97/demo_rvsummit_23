@@ -106,8 +106,14 @@ Wait for the **DONE** led to be ON again, and then press the **RESET** push butt
 :information_source: This demo ends with the crashing of the system. After configuring the FPGA board, you only need to press the **RESET** button to restart. 
 
 ### Running the GUI
-To execute the GUI application, run:
+Before running the GUI application, you need to give full permissions to the serial port dev file.
+```
+sudo chmod 777 <serial_port>
+```
+
+Where `<serial_port>` is the label of the serial port connected to the FPGA board (e.g., /dev/ttyUSB0).
+
+Then, to execute the GUI application, run
 ```
 python3 gui/main.py <serial_port>
 ```
-Where `<serial_port>` is the label of the serial port connected to the FPGA board (e.g., /dev/ttyUSB0).
