@@ -74,7 +74,7 @@ Then, to compile all sources, run in the top directory of the repository:
 ```
 ./build_all
 ```
-The output files (fw_payload.bin and fw_payload.elf) will be in the `opensbi/build/platform/fpga/ariane/firmware/` directory.
+All output files will be in the `output` directory.
 
 ### Copying to the SD Card
 To copy the binary file to the SD card:
@@ -91,7 +91,7 @@ sudo sgdisk --clear --new=1:2048:7000 --new=2 --typecode=1:3000 --typecode=2:830
 
 3. Copy the binary file to the SD card. Again, replace *\<dev_file\>* with the dev file you identfied in step 1. 
 ```
-sudo dd if=opensbi/build/platform/fpga/ariane/firmware/fw_payload.bin of=<dev_file> oflag=sync bs=1M
+sudo dd if=output/fw_payload.bin of=<dev_file> oflag=sync bs=1M
 ```
 
 ### Configuring the Genesys2 board
