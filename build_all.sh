@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ROOT="/home/manuale97/my_repositories/demo_rvsummit_23"
+ROOT=`realpath .`
 
 BAREMETAL_DIR="${ROOT}/bao-baremetal-guest"
 BAO_DIR="${ROOT}/bao-hypervisor"
